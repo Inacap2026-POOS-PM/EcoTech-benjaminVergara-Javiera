@@ -1,6 +1,7 @@
 from infraestructura.api_cliente import obtener_datos_externos
 import sqlite3
 import sys
+from login import iniciar_sesion
 from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -133,17 +134,22 @@ def ejecutar(argumentos=None):
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
+    # Agrega esta línea justo aquí:
+    iniciar_sesion()
+    
+   # Lo que ya tenías sigue igual abajo:
     print("--- PROBANDO CONEXIÓN Y RESILIENCIA (PLAN B) ---")
+    
     datos_nube = obtener_datos_externos()
-
+    
     if datos_nube is not None:
         print(f"✅ Nube activa: Se obtuvieron {len(datos_nube)} empleado(s) desde Supabase.")
     else:
         print("⚠️ Sin conexión a Supabase. Activando Plan B: Consultando base de datos local...")
         inicializar_bd()
         repo = EmpleadoRepositorio()
-        datos_locales = repo.obtener_todos()
+        datos_locales = repo.listar()
         print(f"✅ Plan B exitoso: Se recuperaron {len(datos_locales)} empleado(s) desde SQLite local.")
-
+        
     sys.exit(ejecutar())
