@@ -1,25 +1,39 @@
+import json
 import logging
 import os
 import random
+import sqlite3
 import time
+from datetime import datetime, timezone
 
 import requests
 from dotenv import load_dotenv
 
 load_dotenv()  # lee el archivo .env (que NO se sube a GitHub)
 
-# Registro de eventos: cada reintento queda anotado
+# Registro de eventos: cada reintento y cada degradación quedan anotados
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("cliente_api")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
+# Base local (la misma del proyecto): ruta relativa a la carpeta del proyecto o absoluta
+DB_NOMBRE = os.getenv("DB_NOMBRE", "ecotech.db")
+RUTA_BD = (
+    DB_NOMBRE
+    if os.path.isabs(DB_NOMBRE)
+    else os.path.join(os.path.dirname(os.path.abspath(__file__)), DB_NOMBRE)
+)
+
 TIMEOUT = (3, 10)   # (conectar, leer): siempre un número
 MAX_INTENTOS = 4    # tope: 1 intento + 3 reintentos
 ESPERA_BASE = 1     # segundos; la espera se duplica: 1, 2, 4
 
 
+# ---------------------------------------------------------------
+# Parte 2: reintentos con espera creciente
+# ---------------------------------------------------------------
 def _leer_retry_after(resp):
     """Si el servidor dice cuánto esperar (429), usa ese valor con un máximo de 30 s."""
     valor = resp.headers.get("Retry-After")
@@ -83,5 +97,89 @@ def consultar_tabla(tabla):
     return None
 
 
+# ---------------------------------------------------------------
+# Parte 3: degradación controlada (plan B con datos locales)
+# ---------------------------------------------------------------
+def _conectar():
+    con = sqlite3.connect(RUTA_BD)
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS cache_api ("
+        "tabla TEXT PRIMARY KEY, datos TEXT NOT NULL, guardado_en TEXT NOT NULL)"
+    )
+    return con
+
+
+def guardar_cache(tabla, datos):
+    """Guarda la última respuesta buena de la API en la base local."""
+    ahora = datetime.now(timezone.utc).isoformat()
+    try:
+        con = _conectar()
+        try:
+            with con:
+                con.execute(
+                    "INSERT OR REPLACE INTO cache_api (tabla, datos, guardado_en) VALUES (?, ?, ?)",
+                    (tabla, json.dumps(datos), ahora),
+                )
+        finally:
+            con.close()
+    except sqlite3.Error as e:
+        log.error("No se pudo guardar la copia local: %s", e)
+
+
+def leer_cache(tabla):
+    """Devuelve (datos, momento_guardado) o None si no hay copia local."""
+    try:
+        con = _conectar()
+        try:
+            fila = con.execute(
+                "SELECT datos, guardado_en FROM cache_api WHERE tabla = ?", (tabla,)
+            ).fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error as e:
+        log.error("No se pudo leer la copia local: %s", e)
+        return None
+    if fila is None:
+        return None
+    return json.loads(fila[0]), datetime.fromisoformat(fila[1])
+
+
+def _hace_cuanto(momento):
+    segundos = int((datetime.now(timezone.utc) - momento).total_seconds())
+    if segundos < 60:
+        return f"{segundos} segundos"
+    if segundos < 3600:
+        return f"{segundos // 60} minutos"
+    if segundos < 86400:
+        return f"{segundos // 3600} horas"
+    return f"{segundos // 86400} días"
+
+
+def obtener_datos(tabla):
+    """Lo ideal: API. Plan B: datos locales con aviso. Plan C: mensaje claro."""
+    datos = consultar_tabla(tabla)
+    if datos is not None:
+        guardar_cache(tabla, datos)
+        return {"origen": "api", "datos": datos, "aviso": None}
+
+    cache = leer_cache(tabla)
+    if cache is not None:
+        datos, momento = cache
+        aviso = (
+            "Atención: el servicio no responde. "
+            f"Se muestran datos guardados hace {_hace_cuanto(momento)}."
+        )
+        log.warning("Plan B: usando datos locales (hace %s).", _hace_cuanto(momento))
+        return {"origen": "local", "datos": datos, "aviso": aviso}
+
+    aviso = "El servicio no está disponible y no hay datos guardados. Intenta de nuevo más tarde."
+    log.error("Plan C: sin API y sin datos locales.")
+    return {"origen": "ninguno", "datos": None, "aviso": aviso}
+
+
 if __name__ == "__main__":
-    print(consultar_tabla("empleados"))  # cambia "empleados" por el nombre real de tu tabla
+    resultado = obtener_datos("empleados")  # cambia "empleados" por el nombre real de tu tabla
+    print(f"Origen de los datos: {resultado['origen']}")
+    if resultado["aviso"]:
+        print(resultado["aviso"])
+    print(resultado["datos"])
