@@ -34,6 +34,8 @@ ESPERA_BASE = 1     # segundos; la espera se duplica: 1, 2, 4
 # Auditoría: el nombre de tabla se valida antes de armar la URL
 TABLA_VALIDA = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
 
+TABLA_PRINCIPAL = "empleado"  # tabla que se consulta en la demostración
+
 
 # ---------------------------------------------------------------
 # Parte 2: reintentos con espera creciente
@@ -67,10 +69,8 @@ def consultar_tabla(tabla):
         return None
 
     url = f"{SUPABASE_URL}/rest/v1/{tabla}"
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-    }
+    # Las claves sb_publishable_ van solo en el encabezado apikey (no son JWT)
+    headers = {"apikey": SUPABASE_KEY}
 
     for intento in range(1, MAX_INTENTOS + 1):
         retry_after = None
@@ -189,8 +189,9 @@ def obtener_datos(tabla):
 
 
 if __name__ == "__main__":
-    resultado = obtener_datos("empleados")  # cambia "empleados" por el nombre real de tu tabla
+    resultado = obtener_datos(TABLA_PRINCIPAL)
     print(f"Origen de los datos: {resultado['origen']}")
     if resultado["aviso"]:
         print(resultado["aviso"])
     print(resultado["datos"])
+    
