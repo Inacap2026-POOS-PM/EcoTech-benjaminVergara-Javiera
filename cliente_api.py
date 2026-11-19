@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import random
+import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -30,6 +31,9 @@ TIMEOUT = (3, 10)   # (conectar, leer): siempre un número
 MAX_INTENTOS = 4    # tope: 1 intento + 3 reintentos
 ESPERA_BASE = 1     # segundos; la espera se duplica: 1, 2, 4
 
+# Auditoría: el nombre de tabla se valida antes de armar la URL
+TABLA_VALIDA = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
+
 
 # ---------------------------------------------------------------
 # Parte 2: reintentos con espera creciente
@@ -55,6 +59,13 @@ def _esperar(intento, retry_after=None):
 
 def consultar_tabla(tabla):
     """Pide los datos de una tabla de Supabase. Devuelve una lista o None si falla."""
+    if not TABLA_VALIDA.match(tabla or ""):
+        log.error("Nombre de tabla inválido: %r", tabla)
+        return None
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        log.error("Faltan SUPABASE_URL o SUPABASE_KEY en el archivo .env")
+        return None
+
     url = f"{SUPABASE_URL}/rest/v1/{tabla}"
     headers = {
         "apikey": SUPABASE_KEY,

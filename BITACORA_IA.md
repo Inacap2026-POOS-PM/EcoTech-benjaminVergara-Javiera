@@ -19,3 +19,17 @@ Qué revisamos: Seguridad para que no nos hagan Inyección SQL.Decisión: Acepta
 
 6. consola.py / Menú de usuario
 Qué revisamos: Que el usuario no rompa el programa al ingresar datos inválidos.Decisión: Aceptado. Nos quedamos con la estructura del menú interactivo que armamos con Gemini. Lo pusimos a prueba ingresando sueldos negativos, RUTs repetidos y textos vacíos, y el menú atrapa todos esos errores y te pide el dato de nuevo sin cerrarse.
+
+## Clase 13 - Consumo de servicios externos
+
+Herramienta usada: Claude (asistente de IA). Todo el código se probó en mi computador antes de guardarlo en la rama `javiera`.
+
+| Hallazgo | Prompt (resumen) | Respuesta de la IA | Decisión |
+|---|---|---|---|
+| Llamada sin manejo de URL inválida | Pedí un cliente con timeout y manejo por código de estado | El código solo capturaba Timeout y ConnectionError; con una URL mal escrita en el .env el programa se cayó con un traceback largo | Modifico: agregué `except RequestException` para que falle bien |
+| URL armada con f-string | Auditoría de las cinco señales sobre mi propio código | El nombre de la tabla entra directo a la URL; si viniera de un usuario podría alterar la ruta | Modifico: validé el nombre con una expresión regular antes de armar la URL |
+| Variables del .env sin cargar | Probé con el .env mal configurado | Salía un error técnico poco claro | Modifico: mensaje explícito si faltan SUPABASE_URL o SUPABASE_KEY |
+| `except Exception` en `conexion.py` | Búsqueda de las cinco señales en todo el proyecto | Aparece una vez (línea 54), pero hace `rollback()` y vuelve a lanzar el error con `raise`; no lo silencia | Acepto: es el manejo correcto de transacciones |
+| `verify=False` y SQL con f-strings | Búsqueda de las cinco señales en todo el proyecto | No aparecen en ningún archivo; las consultas usan `?` | Acepto (sin cambios) |
+| Llamadas sin timeout | Búsqueda de `requests.get` en todo el proyecto | Solo hay una llamada y ya tiene `timeout=TIMEOUT` | Acepto (sin cambios) |
+| Librerías | Verifiqué requests (2.34.2) y python-dotenv (1.2.4) con pip y en pypi.org | Ambas existen en PyPI y tienen uso real; `dotenv` sin el prefijo es un paquete distinto | Acepto |
